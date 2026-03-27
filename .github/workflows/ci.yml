@@ -1,0 +1,188 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - test
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  # nombre del proyecto en github, ej: ifrannco/telegram-bot-ia-talk-database-practica-01
+  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+jobs:
+  test:
+    name: Testing
+    runs-on: ubuntu-latest
+
+    steps:
+      # descarga el repositorio en el runner
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # instala python en el runner
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # instala las dependencias del proyecto en el runner
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # ejecuta los test y genera reportes
+      - name: Run tests
+        run: pytest --cov=. --cov-report=xml --junitxml=report.xml
+
+      # publica los reportes como artifacts para que otras etapas lo puedan usar
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: report.xml
+
+  sonarcloud:
+    name: SonarCloud
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+          path: .
+
+      - name: SonarCloud scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
+            -Dsonar.host.url=https://sonarcloud.io
+            -Dsonar.sources=.
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.qualitygate.wait=true
+
+  build:
+    name: Build and Publish Image
+    runs-on: ubuntu-latest
+    needs: sonarcloud
+    if: github.event_name != 'pull_request'
+    permissions:
+      # permiso para leer el contenido del repositorio
+      contents: read
+      # permiso para escribir/publicar imagenes en github pages
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE_REF }}
+
+  scanning:
+    name: Scan Image
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: read
+      # permiso para publicar hallazgos de seguridad en github
+      security-events: write
+
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@v0.2.3
+
+      - name: Generate Trivy JSON report
+        run: trivy image --format json --output scanning-report.json $IMAGE_REF
+
+      - name: Generate CycloneDX SBOM
+        run: trivy image --format cyclonedx --output sbom.cdx.json $IMAGE_REF
+
+      - name: Generate Trivy SARIF
+        run: trivy image --format sarif --output trivy-results.sarif $IMAGE_REF
+
+      - name: Upload Trivy JSON report
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-json-report
+          path: scanning-report.json
+
+      - name: Upload CycloneDX SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyclonedx-sbom
+          path: sbom.cdx.json
+
+      - name: Upload Trivy SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+  summary:
+    name: Summary
+    runs-on: ubuntu-latest
+    needs:
+      - test
+      - sonarcloud
+      - build
+      - scanning
+    if: always()
+
+    steps:
+      - name: Write workflow summary
+        run: |
+          echo "## Pipeline summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Testing: ${{ needs.test.result }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SonarCloud: ${{ needs.sonarcloud.result }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Build: ${{ needs.build.result }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Scanning: ${{ needs.scanning.result }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Generated artifacts" >> "$GITHUB_STEP_SUMMARY"
+          echo "- coverage.xml" >> "$GITHUB_STEP_SUMMARY"
+          echo "- report.xml" >> "$GITHUB_STEP_SUMMARY"
+          echo "- scanning-report.json" >> "$GITHUB_STEP_SUMMARY"
+          echo "- sbom.cdx.json" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Published image" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${IMAGE_REF}\`" >> "$GITHUB_STEP_SUMMARY"
