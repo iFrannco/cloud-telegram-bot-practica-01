@@ -7,10 +7,6 @@ langchain
 # Framework para crear agentes y flujos de trabajo con LLMs
 langgraph
 
-# Biblioteca para integrar modelos de Google Gemini en LangChain
-langchain-google-genai
-
-
 # Biblioteca para integrar modelos de Groq en LangChain
 langchain-groq
 
@@ -32,3 +28,7 @@ SQLAlchemy
 
 # Biblioteca para cargar variables de entorno desde un archivo .env.
 python-dotenv
+
+# Dependencias de testing
+pytest
+pytest-cov
