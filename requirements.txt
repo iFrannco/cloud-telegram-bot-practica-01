@@ -10,6 +10,13 @@ langgraph
 # Biblioteca para integrar modelos de Google Gemini en LangChain
 langchain-google-genai
 
+
+# Biblioteca para integrar modelos de Groq en LangChain
+langchain-groq
+
+# Biblioteca para integrar prompts de LangChain Hub en LangChain
+langchainhub
+
 # Componentes comunitarios para LangChain (incluye conectores a bases de datos)
 langchain-community
 
