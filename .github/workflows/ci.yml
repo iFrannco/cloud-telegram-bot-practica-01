@@ -34,11 +34,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ejecuta los test y genera reportes
+      # ejecuta los test y genera reportes.
       - name: Run tests
         run: |
+          set +e
           pytest --cov=. --cov-report=xml --junitxml=report.xml
           exit_code=$?
+          set -e
           if [ "$exit_code" -eq 5 ]; then
             echo "Pytest no encontro tests en el repositorio. Se continua sin fallar el pipeline."
             exit 0
