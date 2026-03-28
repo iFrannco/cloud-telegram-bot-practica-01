@@ -8,8 +8,10 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ifrannco/cloud-telegram-bot-practica-01
   IMAGE_REF: ghcr.io/ifrannco/cloud-telegram-bot-practica-01:${{ github.sha }}
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -17,23 +19,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # descarga el repositorio en el runner
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      # instala python en el runner
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
 
-      # instala las dependencias del proyecto en el runner
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt
 
-      # ejecuta los test y genera reportes.
       - name: Run tests
         run: |
           set +e
@@ -46,18 +46,21 @@ jobs:
           fi
           exit "$exit_code"
 
-      # publica los reportes como artifacts para que otras etapas lo puedan usar
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-report
           path: coverage.xml
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload test report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-report
           path: report.xml
+          if-no-files-found: warn
+          retention-days: 14
 
   sonarcloud:
     name: SonarCloud
@@ -66,12 +69,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Download coverage report
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: coverage-report
           path: .
@@ -89,61 +92,45 @@ jobs:
             -Dsonar.python.coverage.reportPaths=coverage.xml
 
   build:
-    name: Build and Publish Image
+    name: Build, Scan and Publish Image
     runs-on: ubuntu-latest
     needs: sonarcloud
-    if: github.event_name != 'pull_request'
     permissions:
-      # permiso para leer el contenido del repositorio
       contents: read
-      # permiso para escribir/publicar imagenes en github pages
       packages: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: ${{ env.IMAGE_REF }}
-
-  scanning:
-    name: Scan Image
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.event_name != 'pull_request'
-    permissions:
-      contents: read
-      packages: read
-      # permiso para publicar hallazgos de seguridad en github
       security-events: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build Docker image locally
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ${{ env.IMAGE_REF }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Generate Trivy JSON report
         run: |
           docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
             -v "$PWD:/workdir" \
             aquasec/trivy:0.65.0 image \
+            --severity HIGH,CRITICAL \
             --format json \
             --output /workdir/scanning-report.json \
             "$IMAGE_REF"
@@ -151,6 +138,7 @@ jobs:
       - name: Generate CycloneDX SBOM
         run: |
           docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
             -v "$PWD:/workdir" \
             aquasec/trivy:0.65.0 image \
             --format cyclonedx \
@@ -160,28 +148,54 @@ jobs:
       - name: Generate Trivy SARIF
         run: |
           docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
             -v "$PWD:/workdir" \
             aquasec/trivy:0.65.0 image \
+            --severity HIGH,CRITICAL \
             --format sarif \
             --output /workdir/trivy-results.sarif \
             "$IMAGE_REF"
 
       - name: Upload Trivy JSON report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: trivy-json-report
           path: scanning-report.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload CycloneDX SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cyclonedx-sbom
           path: sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Trivy SARIF as artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: trivy-sarif-report
+          path: trivy-results.sarif
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload Trivy SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
+
+      - name: Fail on HIGH or CRITICAL vulnerabilities
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.65.0 image \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            "$IMAGE_REF"
+
+      - name: Push Docker image to GHCR
+        run: docker push "$IMAGE_REF"
 
   summary:
     name: Summary
@@ -190,7 +204,6 @@ jobs:
       - test
       - sonarcloud
       - build
-      - scanning
     if: always()
 
     steps:
@@ -200,14 +213,10 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- Testing: ${{ needs.test.result }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- SonarCloud: ${{ needs.sonarcloud.result }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Build: ${{ needs.build.result }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Scanning: ${{ needs.scanning.result }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Generated artifacts" >> "$GITHUB_STEP_SUMMARY"
-          echo "- coverage.xml" >> "$GITHUB_STEP_SUMMARY"
-          echo "- report.xml" >> "$GITHUB_STEP_SUMMARY"
-          echo "- scanning-report.json" >> "$GITHUB_STEP_SUMMARY"
-          echo "- sbom.cdx.json" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Published image" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`${IMAGE_REF}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Build / Scan / Publish: ${{ needs.build.result }}" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${{ needs.build.result }}" = "success" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Published image" >> "$GITHUB_STEP_SUMMARY"
+            echo "- \`${IMAGE_REF}\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
