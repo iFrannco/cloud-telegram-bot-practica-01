@@ -8,9 +8,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # nombre del proyecto en github, ej: ifrannco/telegram-bot-ia-talk-database-practica-01
-  IMAGE_NAME: ${{ github.repository }}
-  IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}
+  IMAGE_NAME: ifrannco/cloud-telegram-bot-practica-01
+  IMAGE_REF: ghcr.io/ifrannco/cloud-telegram-bot-practica-01:${{ github.sha }}
 
 jobs:
   test:
