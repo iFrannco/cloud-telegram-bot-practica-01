@@ -4,13 +4,11 @@ WORKDIR /app
 
 COPY requirements.txt .
 
-# Instalamos dependencias y forzamos versiones corregidas en la misma capa
-# para no dejar metadata vulnerable en capas intermedias.
+# Instalamos dependencias del proyecto y eliminamos tooling de empaquetado
+# que no hace falta en runtime y que Trivy esta reportando como vulnerable.
 RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir -r requirements.txt \
-    && python -m pip install --no-cache-dir --upgrade --force-reinstall --no-deps \
-        "wheel==0.46.2" \
-        "jaraco.context==6.1.0"
+    && python -m pip uninstall -y pip wheel jaraco.context || true
 
 COPY . .
 
