@@ -136,17 +136,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Trivy
-        uses: aquasecurity/setup-trivy@v0.2.4
-
       - name: Generate Trivy JSON report
-        run: trivy image --format json --output scanning-report.json $IMAGE_REF
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ env.IMAGE_REF }}
+          format: json
+          output: scanning-report.json
 
       - name: Generate CycloneDX SBOM
-        run: trivy image --format cyclonedx --output sbom.cdx.json $IMAGE_REF
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ env.IMAGE_REF }}
+          format: cyclonedx
+          output: sbom.cdx.json
 
       - name: Generate Trivy SARIF
-        run: trivy image --format sarif --output trivy-results.sarif $IMAGE_REF
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ env.IMAGE_REF }}
+          format: sarif
+          output: trivy-results.sarif
 
       - name: Upload Trivy JSON report
         uses: actions/upload-artifact@v4
