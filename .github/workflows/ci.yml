@@ -137,21 +137,21 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate Trivy JSON report
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           image-ref: ${{ env.IMAGE_REF }}
           format: json
           output: scanning-report.json
 
       - name: Generate CycloneDX SBOM
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           image-ref: ${{ env.IMAGE_REF }}
           format: cyclonedx
           output: sbom.cdx.json
 
       - name: Generate Trivy SARIF
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           image-ref: ${{ env.IMAGE_REF }}
           format: sarif
