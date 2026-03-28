@@ -78,7 +78,7 @@ jobs:
           path: .
 
       - name: SonarCloud scan
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: SonarSource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
@@ -88,7 +88,6 @@ jobs:
             -Dsonar.host.url=https://sonarcloud.io
             -Dsonar.sources=.
             -Dsonar.python.coverage.reportPaths=coverage.xml
-            -Dsonar.qualitygate.wait=true
 
   build:
     name: Build and Publish Image
