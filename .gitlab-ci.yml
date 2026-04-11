@@ -1,5 +1,6 @@
 variables:
   DOCKER_TLS_CERTDIR: "/certs"
+  # Estas variables las inyecta gitlab al momento de ejecutar el pipeline
   IMAGE: ${CI_REGISTRY}/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}:${CI_COMMIT_SHORT_SHA}
 
 before_script:
@@ -14,10 +15,12 @@ stages:
   - deploy
 
 testing:
-  image: alpine
+  image: python:3.11
   stage: testing
   script:
     - echo $CI_JOB_STAGE
+    - pip install -r requirements.txt
+    - pytest --cov=. --cov-report=xml --junitxml=report.xml
   artifacts:
     paths:
       - coverage.xml
@@ -27,12 +30,24 @@ testing:
     - practica-01
 
 sonarqube:
-  image: alpine
+  image:
+    name: sonarsource/sonar-scanner-cli:latest
+    entrypoint: [""]
   stage: quality
   variables:
+    # indica que analizar, en este caso todo el proyecto
     SONAR_PROJECT_BASE_DIR: "./"
+    # indica donde guardar los resultados, en este caso en una carpeta secreta llamada .sonar.
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+    GIT_DEPTH: "0"
   script:
-    - echo "Ejecutando sonarqube"
+    - sonar-scanner
+      -Dsonar.token=${SONAR_TOKEN}
+      -Dsonar.organization=${SONAR_ORGANIZATION}
+      -Dsonar.projectKey=${SONAR_PROJECT_KEY}
+      -Dsonar.host.url=https://sonarcloud.io
+      -Dsonar.sources=.
+      -Dsonar.python.coverage.reportPaths=coverage.xml
   dependencies:
     - testing
   only:
@@ -47,8 +62,10 @@ docker-build:
     - docker:28.0.2-dind
   stage: build
   script:
-   - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
    - echo $IMAGE
+   - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+   - docker build -t $IMAGE .
+   - docker push $IMAGE
   only:
     - main
     - practica-01
@@ -59,8 +76,9 @@ scanning:
     # TRIVY necesita User y Pass para poder acceder a la Imagen
     TRIVY_USERNAME: ${CI_REGISTRY_USER}
     TRIVY_PASSWORD: ${CI_REGISTRY_PASSWORD}
+    TRIVY_AUTH_URL: ${CI_REGISTRY}
   image:
-    name: alpine
+    name: aquasec/trivy:latest
     entrypoint: [ "" ]
   dependencies:
     - docker-build
@@ -70,6 +88,9 @@ scanning:
       - .cache
   script:
     - echo $CI_JOB_STAGE
+    - trivy image --cache-dir .cache/trivy --format json --output scanning-report.json $IMAGE
+    - trivy image --cache-dir .cache/trivy --format cyclonedx --output gl-dependency-scanning-report.json $IMAGE
+  
   artifacts:
     paths:
       - scanning-report.json # gitlab-codequality

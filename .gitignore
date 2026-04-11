@@ -4,3 +4,8 @@ _pycache_
 .venv
 __pycache__
 credentials
+.coverage
+coverage.xml
+report.xml
+.codex
+tests/__pycache__/
