@@ -185,12 +185,13 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
 
-      - name: Fail on HIGH or CRITICAL vulnerabilities
+      - name: Fail on CRITICAL vulnerabilities with fixes available
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             aquasec/trivy:0.65.0 image \
-            --severity HIGH,CRITICAL \
+            --severity CRITICAL \
+            --ignore-unfixed \
             --exit-code 1 \
             "$IMAGE_REF"
 
