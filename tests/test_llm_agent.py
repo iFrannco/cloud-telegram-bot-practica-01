@@ -25,12 +25,17 @@ def test_llm_agent_initializes_with_expected_prompt(monkeypatch):
 
     agent = LLMAgent(db="db-conn")
 
-    assert llm_instances[0].kwargs == {
+    assert len(llm_instances) == 1
+    assert len(toolkit_instances) == 1
+    llm_instance = llm_instances[0]
+    toolkit_instance = toolkit_instances[0]
+
+    assert llm_instance.kwargs == {
         "model": "llama-3.3-70b-versatile",
         "temperature": 0,
     }
-    assert toolkit_instances[0].db == "db-conn"
-    assert toolkit_instances[0].llm is llm_instances[0]
+    assert toolkit_instance.db == "db-conn"
+    assert toolkit_instance.llm is llm_instance
     assert "PostgreSQL database" in agent.system_message
     assert "limit your query to 5 results" in agent.system_message
 
